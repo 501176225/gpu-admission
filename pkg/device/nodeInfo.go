@@ -68,8 +68,10 @@ func NewNodeInfo(node *v1.Node, pods []*v1.Pod) *NodeInfo {
 					klog.Infof("invalid predicateIndex %d larger than device count", index)
 					continue
 				}
+				//计算容器的vcore limit size
 				vcore = util.GetGPUResourceOfContainer(&c, util.VCoreAnnotation)
 				if vcore < util.HundredCore {
+					//共享模式
 					vmemory = util.GetGPUResourceOfContainer(&c, util.VMemoryAnnotation)
 				} else {
 					vcore = util.HundredCore

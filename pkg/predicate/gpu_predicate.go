@@ -143,6 +143,7 @@ func (gpuFilter *GPUFilter) deviceFilter(
 
 	for i := range nodes {
 		node := &nodes[i]
+		//筛选出GPU节点
 		if !util.IsGPUEnabledNode(node) {
 			failedNodesMap[node.Name] = "no GPU device"
 			continue
@@ -155,10 +156,12 @@ func (gpuFilter *GPUFilter) deviceFilter(
 		nodeInfo := device.NewNodeInfo(node, pods)
 		nodeInfoList = append(nodeInfoList, nodeInfo)
 	}
+	//根据各参数对节点进行从小到大的排序
 	sorter.Sort(nodeInfoList)
 
 	for _, nodeInfo := range nodeInfoList {
 		node := nodeInfo.GetNode()
+		//如果找到一个节点满足条件，且被成功打标记，则跳过后续节点
 		if success {
 			failedNodesMap[node.Name] = fmt.Sprintf(
 				"pod %s has already been matched to another node", pod.UID)
