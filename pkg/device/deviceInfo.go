@@ -27,6 +27,8 @@ type DeviceInfo struct {
 	totalMemory uint
 	usedMemory  uint
 	usedCore    uint
+	numberofContainer uint
+	isolatedTime uint
 }
 
 func newDeviceInfo(id int, totalMemory uint) *DeviceInfo {
@@ -42,7 +44,7 @@ func (dev *DeviceInfo) GetID() int {
 }
 
 // AddUsedResources records the used GPU core and memory
-func (dev *DeviceInfo) AddUsedResources(usedCore uint, usedMemory uint) error {
+func (dev *DeviceInfo) AddUsedResources(usedCore uint, usedMemory uint, isolatedTime int) error {
 	if usedCore+dev.usedCore > util.HundredCore {
 		return fmt.Errorf("update usedcore failed, request: %d, already used: %d",
 			usedCore, dev.usedCore)
@@ -52,10 +54,16 @@ func (dev *DeviceInfo) AddUsedResources(usedCore uint, usedMemory uint) error {
 		return fmt.Errorf("update usedmemory failed, request: %d, already used: %d",
 			usedMemory, dev.usedMemory)
 	}
-
+	var itime uint
 	dev.usedCore += usedCore
 	dev.usedMemory += usedMemory
-
+	dev.numberofContainer += 1
+	if dev.isolatedTime < uint(isolatedTime) {
+		itime = uint(isolatedTime)
+	} else {
+		itime = dev.isolatedTime
+	}
+	dev.isolatedTime = itime
 	return nil
 }
 
@@ -68,3 +76,12 @@ func (d *DeviceInfo) AllocatableCores() uint {
 func (d *DeviceInfo) AllocatableMemory() uint {
 	return d.totalMemory - d.usedMemory
 }
+
+func (d *DeviceInfo) IsolatedTime() uint {
+	return d.isolatedTime
+}
+
+func (d *DeviceInfo) NumberofContainer() uint {
+	return d.numberofContainer
+}
+

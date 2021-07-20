@@ -20,6 +20,9 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	//"reflect"
+	"time"
+	"errors"
 
 	"k8s.io/api/core/v1"
 	apierr "k8s.io/apimachinery/pkg/api/errors"
@@ -33,6 +36,7 @@ const (
 	PredicateGPUIndexPrefix = "tencent.com/predicate-gpu-idx-"
 	PredicateNode           = "tencent.com/predicate-node"
 	GPUAssigned             = "tencent.com/gpu-assigned"
+	EstimatedTime			= "tencent.com/estimated-time-"
 	HundredCore             = 100
 )
 
@@ -132,6 +136,38 @@ func GetPredicateIdxOfContainer(pod *v1.Pod, containerIndex int) ([]int, error) 
 		}
 		ret = append(ret, index)
 	}
+	return ret, nil
+}
+
+//获得容器c的预测执行时间
+func GetEstimatedTimeOfContainer(pod *v1.Pod, containerIndex int) (uint, error) {
+	var ret uint
+	estimatedTime, ok := pod.Annotations[EstimatedTime+strconv.Itoa(containerIndex)]
+	if !ok {
+		return ret, fmt.Errorf("estimated time for container %d of pod %s not found",
+			containerIndex, pod.UID)
+	}
+	ans, err := strconv.Atoi(estimatedTime)
+	if err != nil {
+		return ret, err
+	}
+	ret = uint(ans)
+	return ret, nil
+}
+
+//获得容器已经执行的时间
+func GetRunningTimeOfContainer(pod *v1.Pod, containerIndex int) (uint, error) {
+	var ret uint
+	startTime := pod.Status.ContainerStatuses[containerIndex].State.Running.StartedAt.Time
+	if startTime.IsZero() {
+		return ret, errors.New("time: Invalid time")
+	}
+	currentTime := time.Now()
+	runningTime := currentTime.Sub(startTime).Seconds()
+	if runningTime < 0 {
+		return ret, errors.New("time: time less than 0 is illegal")
+	}
+	ret = uint(runningTime)
 	return ret, nil
 }
 

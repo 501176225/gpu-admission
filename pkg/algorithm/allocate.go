@@ -40,11 +40,11 @@ func NewAllocator(n *device.NodeInfo) *allocator {
 // IsAllocatable attempt to allocate containers which has GPU request of given pod
 func (alloc *allocator) IsAllocatable(pod *v1.Pod) bool {
 	allocatable := true
-	for _, c := range pod.Spec.Containers {
+	for i, c := range pod.Spec.Containers {
 		if !util.IsGPURequiredContainer(&c) {
 			continue
 		}
-		_, err := alloc.AllocateOne(&c)
+		_, err := alloc.AllocateOne(pod, i, &c)
 		if err != nil {
 			klog.Infof("failed to allocate for pod %s container %s", pod.UID, c.Name)
 			allocatable = false
@@ -66,7 +66,7 @@ func (alloc *allocator) Allocate(pod *v1.Pod) (*v1.Pod, error) {
 			continue
 		}
 		devIDs := []string{}
-		devs, err := alloc.AllocateOne(&c)
+		devs, err := alloc.AllocateOne(pod, i, &c)
 		if err != nil {
 			klog.Infof("failed to allocate for pod %s(%s)", newPod.Name, c.Name)
 			return nil, err
@@ -84,22 +84,32 @@ func (alloc *allocator) Allocate(pod *v1.Pod) (*v1.Pod, error) {
 }
 
 // AllocateOne tries to allocate GPU devices for given container
-func (alloc *allocator) AllocateOne(container *v1.Container) ([]*device.DeviceInfo, error) {
+func (alloc *allocator) AllocateOne(pod *v1.Pod, containerIndex int, container *v1.Container) ([]*device.DeviceInfo, error) {
 	var (
 		devs           []*device.DeviceInfo
 		sharedMode     bool
 		vcore, vmemory uint
 	)
 	node := alloc.nodeInfo.GetNode()
+	//节点的总的显存快熟
 	nodeTotalMemory := util.GetCapacityOfNode(node, util.VMemoryAnnotation)
+	//GPU设备数量
 	deviceCount := util.GetGPUDeviceCountOfNode(node)
+	//每张卡的GPU显存数量
 	deviceTotalMemory := uint(nodeTotalMemory / deviceCount)
+	//容器请求的GPU份数
 	needCores := util.GetGPUResourceOfContainer(container, util.VCoreAnnotation)
+	//容器所需的显存块数
 	needMemory := util.GetGPUResourceOfContainer(container, util.VMemoryAnnotation)
+	//容器的预测执行时间
+	estimatedTime, err := util.GetEstimatedTimeOfContainer(pod, containerIndex)
+	if err != nil {
+		return devs, err
+	}
 
 	switch {
 	case needCores < util.HundredCore:
-		devs = NewShareMode(alloc.nodeInfo).Evaluate(needCores, needMemory)
+		devs = NewShareMode(alloc.nodeInfo).Evaluate(needCores, needMemory, estimatedTime)
 		sharedMode = true
 	default:
 		devs = NewExclusiveMode(alloc.nodeInfo).Evaluate(needCores, needMemory)
@@ -120,7 +130,8 @@ func (alloc *allocator) AllocateOne(container *v1.Container) ([]*device.DeviceIn
 	// record this container GPU request, we don't rollback data if an error happened,
 	// because any container failed to be allocated will cause the predication failed
 	for _, dev := range devs {
-		err := alloc.nodeInfo.AddUsedResources(dev.GetID(), vcore, vmemory)
+		//新加入的container，已执行时间为 0
+		err := alloc.nodeInfo.AddUsedResources(dev.GetID(), vcore, vmemory, int(estimatedTime))
 		if err != nil {
 			klog.Infof("failed to update used resource for node %s dev %d due to %v",
 				node.Name, dev.GetID(), err)

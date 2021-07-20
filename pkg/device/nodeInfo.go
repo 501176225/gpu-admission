@@ -62,22 +62,38 @@ func NewNodeInfo(node *v1.Node, pods []*v1.Pod) *NodeInfo {
 			if err != nil {
 				continue
 			}
+			//共享模式该循环只会执行一遍
 			for _, index := range predicateIndexes {
-				var vcore, vmemory uint
+				var vcore, vmemory, etime, rtime uint
+				var itime int
 				if index >= deviceCount {
 					klog.Infof("invalid predicateIndex %d larger than device count", index)
 					continue
 				}
 				//计算容器的vcore limit size
+	
 				vcore = util.GetGPUResourceOfContainer(&c, util.VCoreAnnotation)
 				if vcore < util.HundredCore {
 					//共享模式
+					etime, err = util.GetEstimatedTimeOfContainer(pod, i)
+					if err != nil {
+						continue
+					}
+					rtime, err = util.GetRunningTimeOfContainer(pod, i)
+					if err != nil {
+						continue
+					}
+					itime = int(etime) - int(rtime)
+					if itime < 0 {
+						itime = 0
+					}
 					vmemory = util.GetGPUResourceOfContainer(&c, util.VMemoryAnnotation)
 				} else {
+					itime = 0
 					vcore = util.HundredCore
 					vmemory = deviceTotalMemory
 				}
-				err = ret.AddUsedResources(index, vcore, vmemory)
+				err = ret.AddUsedResources(index, vcore, vmemory, itime)
 				if err != nil {
 					klog.Infof("failed to update used resource for node %s dev %d due to %v",
 						node.Name, index, err)
@@ -91,8 +107,8 @@ func NewNodeInfo(node *v1.Node, pods []*v1.Pod) *NodeInfo {
 }
 
 // AddUsedResources records the used GPU core and memory
-func (n *NodeInfo) AddUsedResources(devID int, vcore uint, vmemory uint) error {
-	err := n.devs[devID].AddUsedResources(vcore, vmemory)
+func (n *NodeInfo) AddUsedResources(devID int, vcore uint, vmemory uint, itime int) error {
+	err := n.devs[devID].AddUsedResources(vcore, vmemory, itime)
 	if err != nil {
 		klog.Infof("failed to update used resource for node %s dev %d due to %v", n.name, devID, err)
 		return err
